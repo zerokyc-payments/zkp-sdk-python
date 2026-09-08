@@ -14,9 +14,10 @@ Secrets never appear in exceptions: messages carry API-provided text only.
 from __future__ import annotations
 
 import json
+import re
 import time as _time
 from collections.abc import Callable
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
 
 from .config import Config
@@ -32,6 +33,9 @@ from .idempotency import assert_valid
 from .models.invoice import CreateInvoiceResponse, Invoice
 from .models.webhook import WebhookEvent
 from .webhooks.verifier import WebhookVerifier
+
+# plain decimal only: no sign, no exponent, no NaN/Infinity spellings
+_AMOUNT_RE = re.compile(r"^[0-9]+(?:\.[0-9]+)?$")
 
 _RETRYABLE_STATUSES = frozenset({429, 408})
 _RETRY_AFTER_CAP_SECONDS = 5
@@ -219,8 +223,7 @@ def _map_error(response: HttpResponse) -> Exception:
     if response.status in (401, 403):
         return AuthenticationError(message)
     if response.status == 429:
-        retry_after = response.header("Retry-After")
-        return RateLimitError(message, int(retry_after) if retry_after else None)
+        return RateLimitError(message, _parse_retry_after(response.header("Retry-After")))
     if response.status in (400, 422):
         return ValidationError(message)
     return APIError(message, status=response.status, error_code=code, doc_url=doc_url)
@@ -240,12 +243,28 @@ def _backoff_ms(attempt: int) -> float:
     return 300.0 * (2**attempt)
 
 
-def _retry_after_ms(retry_after: str | None) -> float | None:
-    if retry_after is None:
+def _parse_retry_after(header: str | None) -> int | None:
+    """Seconds from a Retry-After header, or None when absent/unsupported.
+
+    Only plain non-negative integers are supported; HTTP-date and any
+    malformed value (incl. negative or fractional) safely map to None.
+    """
+    if header is None:
+        return None
+    value = header.strip()
+    return int(value) if value.isdigit() else None
+
+
+def _retry_after_ms(header: str | None) -> float | None:
+    """Delay for a 429 retry: Retry-After when valid and within the cap,
+    default backoff when the header is absent, None (give up waiting) for a
+    valid value beyond the cap or an unsupported/malformed format."""
+    if header is None:
         return _backoff_ms(0)
-    try:
-        seconds = int(retry_after)
-    except ValueError:
+    seconds = _parse_retry_after(header)
+    if seconds is None:
+        # malformed or HTTP-date: unsupported -> report retry_after=None,
+        # still retry on the default bounded backoff
         return _backoff_ms(0)
     return seconds * 1000 if seconds <= _RETRY_AFTER_CAP_SECONDS else None
 
@@ -270,12 +289,13 @@ def _build_create_payload(
 ) -> dict[str, Any]:
     # local validation mirrors the API rules so obvious mistakes never leave
     # the process (never the only line of defense)
-    try:
-        amount_dec = Decimal(str(amount))
-    except InvalidOperation as e:
-        raise ValidationError(f"amount must be a positive decimal string, got {amount!r}") from e
-    if amount_dec <= 0:
-        raise ValidationError(f"amount must be greater than 0, got {amount!r}")
+    if not isinstance(amount, str) or not _AMOUNT_RE.match(amount):
+        raise ValidationError(f"amount must be a plain positive decimal string, got {amount!r}")
+    amount_dec = Decimal(amount)
+    if not amount_dec.is_finite() or amount_dec <= 0:
+        # the regex already rejects NaN/sNaN/Infinity/-Infinity/0/negatives;
+        # is_finite() stays as a belt-and-suspenders guard
+        raise ValidationError(f"amount must be a positive finite decimal, got {amount!r}")
     if not base_currency:
         raise ValidationError("currency must not be empty")
     if ttl_minutes is not None and not 10 <= ttl_minutes <= 4320:

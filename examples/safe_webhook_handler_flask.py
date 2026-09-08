@@ -15,6 +15,7 @@ import os
 from flask import Flask, request
 
 from zerokyc import ReplayGuard, ZeroKYC
+from zerokyc.exceptions import WebhookVerificationError
 
 app = Flask(__name__)
 
@@ -56,7 +57,8 @@ def webhook():
     # 1. Signature + timestamp first, before touching the payload.
     try:
         event = zkp.verify_webhook(request.get_data(), request.headers.get("X-ZKP-Signature", ""))
-    except Exception:
+    except WebhookVerificationError as exc:
+        app.logger.warning("zerokyc webhook rejected: %s", exc.reason)
         return "invalid signature", 400
 
     # 2. At-least-once delivery: skip duplicates, answer 200 so retries stop.

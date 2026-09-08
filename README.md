@@ -47,9 +47,11 @@ print(response.invoice.checkout_url)   # redirect the buyer here
    payment — never a browser success URL.**
 
 ```python
+from zerokyc.exceptions import WebhookVerificationError
+
 try:
     event = zkp.verify_webhook(request.body, request.headers["X-ZKP-Signature"])
-except Exception:
+except WebhookVerificationError:
     return Response(status=400)
 
 if event.is_payment_confirmed:

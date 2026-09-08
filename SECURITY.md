@@ -25,7 +25,7 @@ prefer to stay anonymous.
 
 ## Verification notes for auditors
 
-- Webhook comparison uses `hash_equals` (constant time).
+- Webhook signature comparison uses `hmac.compare_digest` for constant-time comparison.
 - Timestamp tolerance defaults to ±300 seconds and is enforced before the
   HMAC comparison.
 - Secrets are never included in exceptions or logs by the SDK itself.

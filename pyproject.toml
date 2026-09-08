@@ -39,7 +39,7 @@ Changelog = "https://github.com/zerokyc-payments/zkp-sdk-python/blob/main/CHANGE
 Security = "https://github.com/zerokyc-payments/zkp-sdk-python/blob/main/SECURITY.md"
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6"]
+dev = ["pytest>=8", "ruff>=0.6", "pytest-cov>=5"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/zerokyc"]

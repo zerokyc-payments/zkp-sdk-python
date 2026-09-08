@@ -3,6 +3,8 @@ name: CI
 on:
   push:
     branches: [main]
+    tags:
+      - "v*"
   pull_request:
 
 jobs:
@@ -19,14 +21,16 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      - name: Install package and dev tools
+      - name: Install package and dev dependencies
         run: pip install -e ".[dev]"
 
       - name: Lint (ruff)
         run: ruff check .
 
-      - name: Test (pytest)
-        run: pytest
+      - name: Test (pytest, coverage gate on security-sensitive modules)
+        run: >
+          pytest --cov=zerokyc.webhooks --cov=zerokyc.idempotency
+          --cov-report=term --cov-fail-under=90
 
   build:
     runs-on: ubuntu-latest
@@ -35,10 +39,36 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
       - name: Build sdist and wheel
         run: |
-          pip install build
+          pip install build twine
           python -m build
+
+      - name: Metadata validation (twine check)
+        run: twine check dist/*
+
+      - name: Wheel contains py.typed
+        run: python -m zipfile -l dist/*.whl | grep -q "zerokyc/py.typed"
+
+      - name: Artifacts contain no __pycache__ or .pyc
+        run: |
+          ! python -m zipfile -l dist/*.whl | grep -E "__pycache__|\.pyc"
+          ! tar -tzf dist/*.tar.gz | grep -E "__pycache__|\.pyc"
+
+      - name: Clean install from the built wheel
+        run: |
+          python -m venv /tmp/clean
+          /tmp/clean/bin/pip install dist/*.whl
+          /tmp/clean/bin/python - <<'PY'
+          import zerokyc
+          from zerokyc import ZeroKYC
+          from pathlib import Path
+          assert zerokyc.__version__ == "0.1.0"
+          assert (Path(zerokyc.__file__).parent / "py.typed").is_file()
+          print("clean wheel install OK:", zerokyc.__version__)
+          PY
+
       - uses: actions/upload-artifact@v4
         with:
           name: dist

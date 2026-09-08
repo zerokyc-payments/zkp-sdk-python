@@ -13,6 +13,7 @@ import os
 from fastapi import FastAPI, Request, Response
 
 from zerokyc import ReplayGuard, ZeroKYC
+from zerokyc.exceptions import WebhookVerificationError
 
 app = FastAPI()
 
@@ -54,7 +55,9 @@ async def webhook(request: Request) -> Response:
     # 1. Signature + timestamp first, before touching the payload.
     try:
         event = zkp.verify_webhook(await request.body(), request.headers.get("X-ZKP-Signature", ""))
-    except Exception:
+    except WebhookVerificationError as exc:
+        # machine-readable reason only: never log secrets or full payloads
+        print(f"zerokyc webhook rejected: {exc.reason}")
         return Response(status_code=400)
 
     # 2. At-least-once delivery: skip duplicates, answer 200 so retries stop.
