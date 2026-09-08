@@ -53,8 +53,8 @@ jobs:
 
       - name: Artifacts contain no __pycache__ or .pyc
         run: |
-          ! python -m zipfile -l dist/*.whl | grep -E "__pycache__|\.pyc"
-          ! tar -tzf dist/*.tar.gz | grep -E "__pycache__|\.pyc"
+          ! python -m zipfile -l dist/*.whl | grep -E "__pycache__|\.pyc|\.coverage|coverage\.xml|htmlcov"
+          ! tar -tzf dist/*.tar.gz | grep -E "__pycache__|\.pyc|\.coverage|coverage\.xml|htmlcov"
 
       - name: Clean install from the built wheel
         run: |
