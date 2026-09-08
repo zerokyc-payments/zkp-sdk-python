@@ -64,7 +64,7 @@ def urllib_transport(
     """
     from . import __version__
 
-    merged = {f"User-Agent": f"zerokyc-python/{__version__}"}
+    merged = {"User-Agent": f"zerokyc-python/{__version__}"}
     merged.update(headers or {})
     req = urllib.request.Request(
         url=url,
